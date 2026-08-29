@@ -1,12 +1,50 @@
-export default async function handler(req,res){
- if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
- if(!process.env.ANTHROPIC_API_KEY)return res.status(503).json({error:'AI service is not configured. Add ANTHROPIC_API_KEY to your server environment.'});
- try{
-  const{pdf,count=10}=req.body||{};if(!pdf)return res.status(400).json({error:'No PDF supplied.'});
-  const n=Math.min(Math.max(Number(count)||10,3),30);
-  const prompt=`Create exactly ${n} multiple-choice questions from the attached study PDF. Return ONLY valid JSON in this shape: {"questions":[{"question":"...","options":["...","...","...","..."],"correctIndex":0}]}. Make questions answerable from the document, avoid duplicates, and keep all four options plausible.`;
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||'claude-sonnet-4-6',max_tokens:6000,messages:[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:pdf}},{type:'text',text:prompt}]}]})});
-  if(!r.ok){console.error(await r.text());return res.status(502).json({error:'AI generation failed.'})}
-  const data=await r.json(),raw=data.content?.[0]?.text||'',match=raw.match(/\{[\s\S]*\}/),parsed=JSON.parse(match?match[0]:raw);return res.status(200).json(parsed);
- }catch(error){console.error(error);return res.status(500).json({error:'Could not generate the quiz.'})}
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'AI service is not configured. Add GEMINI_API_KEY in Vercel.' });
+
+  try {
+    const { pdf, count = 10 } = req.body || {};
+    if (!pdf) return res.status(400).json({ error: 'No PDF supplied.' });
+
+    const n = Math.min(Math.max(Number(count) || 10, 3), 30);
+    const prompt = `Create exactly ${n} multiple-choice questions from the attached study PDF. Return ONLY valid JSON in this exact shape: {"questions":[{"question":"...","options":["...","...","...","..."],"correctIndex":0}]}. Make every question answerable from the document, avoid duplicates, and make all four options plausible. Do not include markdown or any text outside the JSON.`;
+
+    const response = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(process.env.GEMINI_API_KEY),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inlineData: { mimeType: 'application/pdf', data: pdf } },
+              { text: prompt }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.4,
+            responseMimeType: 'application/json'
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      console.error(await response.text());
+      return res.status(502).json({ error: 'Gemini could not generate the quiz. Please try again.' });
+    }
+
+    const data = await response.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed.questions) || !parsed.questions.length) {
+      return res.status(502).json({ error: 'Gemini returned an invalid quiz.' });
+    }
+
+    return res.status(200).json(parsed);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Could not generate the quiz.' });
+  }
 }
