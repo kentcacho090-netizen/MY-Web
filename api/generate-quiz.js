@@ -5,15 +5,23 @@ export default async function handler(req, res) {
   try {
     const { pdf, count = 10 } = req.body || {};
     if (!pdf) return res.status(400).json({ error: 'No PDF supplied.' });
+    // Vercel Functions have a 4.5 MB request-body limit. The browser sends
+    // the PDF as base64, so reject oversized PDFs before they hit that limit.
+    if (String(pdf).length > 4_000_000) {
+      return res.status(413).json({ error: 'PDF is too large. Please use a PDF smaller than about 3 MB.' });
+    }
 
     const n = Math.min(Math.max(Number(count) || 10, 3), 30);
     const prompt = `Create exactly ${n} multiple-choice questions from the attached study PDF. Return ONLY valid JSON in this exact shape: {"questions":[{"question":"...","options":["...","...","...","..."],"correctIndex":0}]}. Make every question answerable from the document, avoid duplicates, and make all four options plausible. Do not include markdown or any text outside the JSON.`;
 
     const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(process.env.GEMINI_API_KEY),
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY
+        },
         body: JSON.stringify({
           contents: [{
             parts: [
