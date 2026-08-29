@@ -1,13 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 const QuizPlatform = () => {
-  const [mode, setMode] = useState('home'); // home, create, quiz, results, manage
+  const [mode, setMode] = useState('home');
   const [quizzes, setQuizzes] = useState([]);
   const [currentQuiz, setCurrentQuiz] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Check URL for quiz parameter
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const quizId = params.get('quiz');
@@ -20,7 +19,6 @@ const QuizPlatform = () => {
     }
   }, [quizzes]);
 
-  // Load quizzes from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('quizzes');
     if (saved) {
@@ -32,7 +30,6 @@ const QuizPlatform = () => {
     }
   }, []);
 
-  // Save quizzes to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem('quizzes', JSON.stringify(quizzes));
   }, [quizzes]);
@@ -42,7 +39,6 @@ const QuizPlatform = () => {
     setError('');
 
     try {
-      // Load PDF.js
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
       script.onload = async () => {
@@ -62,7 +58,6 @@ const QuizPlatform = () => {
               text += pageText + '\n';
             }
 
-            // Call Anthropic API to generate questions
             const response = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -321,22 +316,20 @@ const QuizTaker = ({ quiz, onComplete, onBack }) => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState(new Array(quiz.questions.length).fill(-1));
   const [timeLeft, setTimeLeft] = useState(quiz.timeLimit * 60);
-  const [submitted, setSubmitted] = useState(false);
 
-     useEffect(() => {
-     if (timeLeft <= 0 && currentQuestion === quiz.questions.length - 1) {
-       onComplete(answers, quiz.timeLimit * 60 - timeLeft);
-       return;
-     }
-
-     const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
-     return () => clearInterval(timer);
-   }, [timeLeft, currentQuestion, quiz.questions.length, answers, quiz.timeLimit, onComplete]);
-
-  const handleSubmit = () => {
-    setSubmitted(true);
+  const handleSubmitQuiz = () => {
     onComplete(answers, quiz.timeLimit * 60 - timeLeft);
   };
+
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      handleSubmitQuiz();
+      return;
+    }
+
+    const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    return () => clearInterval(timer);
+  }, [timeLeft]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
@@ -399,7 +392,7 @@ const QuizTaker = ({ quiz, onComplete, onBack }) => {
           </button>
         ) : (
           <button
-            onClick={handleSubmit}
+            onClick={handleSubmitQuiz}
             style={{ flex: 1, padding: '12px', backgroundColor: '#0066cc', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '500', cursor: 'pointer' }}
           >
             Submit quiz
