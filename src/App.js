@@ -1,11 +1,44 @@
-import QuizPlatform from './QuizPlatform';
+import React, { useEffect, useMemo, useState } from 'react';
+import './App.css';
 
-function App() {
-  return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#fff' }}>
-      <QuizPlatform />
-    </div>
-  );
+const SAMPLE_QUIZ = { id:'sample-quiz', title:'Quick Science Review', questions:[
+ {question:'What is the basic unit of life?',options:['Atom','Cell','Tissue','Organ'],correctIndex:1},
+ {question:'Which planet is known as the Red Planet?',options:['Venus','Jupiter','Mars','Mercury'],correctIndex:2},
+ {question:'What gas do plants primarily absorb during photosynthesis?',options:['Oxygen','Nitrogen','Carbon dioxide','Hydrogen'],correctIndex:2}], timeLimit:5, createdAt:new Date().toISOString(), attempts:[] };
+
+function App(){
+ const [page,setPage]=useState('home');
+ const [quizzes,setQuizzes]=useState(()=>{try{return JSON.parse(localStorage.getItem('quiz-master-quizzes'))||[]}catch{return[]}});
+ const [activeQuiz,setActiveQuiz]=useState(null);
+ const [dark,setDark]=useState(()=>localStorage.getItem('quiz-master-dark')==='true');
+ useEffect(()=>localStorage.setItem('quiz-master-quizzes',JSON.stringify(quizzes)),[quizzes]);
+ useEffect(()=>localStorage.setItem('quiz-master-dark',dark),[dark]);
+ const addQuiz=q=>{setQuizzes(p=>[q,...p]);setActiveQuiz(q);setPage('quiz')};
+ const finishQuiz=a=>{setQuizzes(p=>p.map(q=>q.id===activeQuiz.id?{...q,attempts:[...(q.attempts||[]),a]}:q));setActiveQuiz({...activeQuiz,attempts:[...(activeQuiz.attempts||[]),a],lastAttempt:a});setPage('results')};
+ const content=useMemo(()=>{
+  if(page==='create')return <CreatePage onBack={()=>setPage('home')} onCreate={addQuiz}/>;
+  if(page==='quiz'&&activeQuiz)return <QuizPage quiz={activeQuiz} onBack={()=>setPage('home')} onFinish={finishQuiz}/>;
+  if(page==='results'&&activeQuiz)return <ResultsPage quiz={activeQuiz} onHome={()=>{setActiveQuiz(null);setPage('home')}} onRetry={()=>setPage('quiz')}/>;
+  if(page==='manage')return <ManagePage quizzes={quizzes} onBack={()=>setPage('home')} onOpen={q=>{setActiveQuiz(q);setPage('quiz')}} onDelete={id=>setQuizzes(p=>p.filter(q=>q.id!==id))}/>;
+  return <HomePage quizzes={quizzes} onCreate={()=>setPage('create')} onManage={()=>setPage('manage')} onSample={()=>addQuiz({...SAMPLE_QUIZ,id:`sample-${Date.now()}`})}/>;
+ },[page,activeQuiz,quizzes]);
+ return <div className={dark?'app dark':'app'}><header className="topbar"><button className="brand" onClick={()=>{setActiveQuiz(null);setPage('home')}}><span className="brand-mark">Q</span><span>Quiz Master</span></button><div className="top-actions"><button className="icon-btn" onClick={()=>setDark(v=>!v)}>{dark?'☀':'☾'}</button><button className="avatar">KC</button></div></header><main>{content}</main><footer>Quiz Master · Build quizzes. Learn better.</footer></div>
 }
-
+function HomePage({quizzes,onCreate,onManage,onSample}){return <section className="hero page"><div className="eyebrow">AI-POWERED STUDY TOOL</div><h1>Turn your notes into<br/><span>better quizzes.</span></h1><p className="hero-copy">Upload a PDF, choose your settings, and create a focused multiple-choice quiz in seconds.</p><div className="hero-actions"><button className="primary" onClick={onCreate}>＋ Create a quiz</button>{quizzes.length>0&&<button className="secondary" onClick={onManage}>Manage quizzes ({quizzes.length})</button>}</div><div className="feature-grid"><Feature icon="↥" title="Upload a PDF" text="Use lecture notes, reviewers, or study materials."/><Feature icon="✦" title="Generate questions" text="Create clear multiple-choice questions from your material."/><Feature icon="◷" title="Test yourself" text="Set a timer and see your score when you're done."/></div>{quizzes.length===0&&<div className="sample-card"><div><strong>Want to try it first?</strong><p>Start with a built-in sample quiz to see the experience.</p></div><button className="text-btn" onClick={onSample}>Try sample →</button></div>}</section>}
+function Feature({icon,title,text}){return <div className="feature"><div className="feature-icon">{icon}</div><div><h3>{title}</h3><p>{text}</p></div></div>}
+function CreatePage({onBack,onCreate}){
+ const[file,setFile]=useState(null),[count,setCount]=useState(10),[minutes,setMinutes]=useState(10),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const create=async()=>{if(!file)return setError('Please choose a PDF first.');setBusy(true);setError('');try{const buffer=await file.arrayBuffer();const bytes=new Uint8Array(buffer);let binary='';const chunk=0x8000;for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));const pdf= btoa(binary);const response=await fetch('/api/generate-quiz',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pdf,count})});const data=await response.json();if(!response.ok)throw new Error(data.error||'AI generation failed.');if(!Array.isArray(data.questions)||!data.questions.length)throw new Error('No questions were generated.');onCreate({id:crypto.randomUUID(),title:file.name.replace(/\.pdf$/i,''),questions:data.questions,timeLimit:minutes,createdAt:new Date().toISOString(),attempts:[]})}catch(e){setError(e.message)}finally{setBusy(false)}};
+ return <section className="page narrow"><button className="back" onClick={onBack}>← Back</button><div className="section-head"><div className="eyebrow">NEW QUIZ</div><h2>Create a quiz</h2><p>Give Quiz Master your study material and choose how you want to practice.</p></div><label className="upload"><input type="file" accept="application/pdf,.pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/><div className="upload-icon">↑</div><strong>{file?file.name:'Choose a PDF file'}</strong><span>{file?`${Math.round(file.size/1024)} KB selected`:'Click to browse from your computer'}</span></label><div className="settings"><Setting label="Questions" value={count} min={3} max={30} onChange={setCount}/><Setting label="Time limit" value={minutes} min={1} max={60} suffix="min" onChange={setMinutes}/></div>{error&&<div className="error">{error}</div>}<button className="primary full" disabled={!file||busy} onClick={create}>{busy?'Generating…':'Generate quiz'}</button><p className="privacy">Your PDF is sent to the configured AI endpoint only when you generate a quiz.</p></section>
+}
+function Setting({label,value,min,max,suffix='',onChange}){return <div className="setting"><div><strong>{label}</strong><b>{value} {suffix}</b></div><input type="range" min={min} max={max} value={value} onChange={e=>onChange(Number(e.target.value))}/></div>}
+function QuizPage({quiz,onBack,onFinish}){
+ const[index,setIndex]=useState(0),[answers,setAnswers]=useState(()=>Array(quiz.questions.length).fill(-1)),[left,setLeft]=useState(quiz.timeLimit*60),[done,setDone]=useState(false);
+ const submit=()=>{if(done)return;setDone(true);const correct=answers.reduce((n,a,i)=>n+(a===quiz.questions[i].correctIndex?1:0),0);onFinish({timestamp:new Date().toISOString(),score:Math.round(correct/quiz.questions.length*100),correct,answers,timeSpent:quiz.timeLimit*60-left})};
+ useEffect(()=>{if(done)return;if(left<=0){submit();return}const t=setTimeout(()=>setLeft(v=>v-1),1000);return()=>clearTimeout(t)});
+ const q=quiz.questions[index],mm=Math.floor(left/60).toString().padStart(2,'0'),ss=(left%60).toString().padStart(2,'0');
+ return <section className="page quiz-page"><div className="quiz-top"><button className="back" onClick={onBack}>← Exit</button><div className={left<60?'timer danger':'timer'}>◷ {mm}:{ss}</div></div><div className="progress"><span style={{width:`${(index+1)/quiz.questions.length*100}%`}}/></div><div className="question-meta">Question {index+1} <span>of {quiz.questions.length}</span></div><h2 className="question">{q.question}</h2><div className="options">{q.options.map((opt,i)=><button key={`${i}-${opt}`} className={answers[index]===i?'option selected':'option'} onClick={()=>setAnswers(a=>{const n=[...a];n[index]=i;return n})}><span>{String.fromCharCode(65+i)}</span>{opt}</button>)}</div><div className="quiz-nav"><button className="secondary" disabled={index===0} onClick={()=>setIndex(i=>i-1)}>← Previous</button>{index===quiz.questions.length-1?<button className="primary" onClick={submit}>Submit quiz</button>:<button className="primary" onClick={()=>setIndex(i=>i+1)}>Next →</button>}</div></section>
+}
+function ResultsPage({quiz,onHome,onRetry}){const a=quiz.lastAttempt||quiz.attempts?.at(-1);return <section className="page narrow result"><div className="eyebrow">QUIZ COMPLETE</div><h2>Nice work.</h2><p>Here’s how you did on <strong>{quiz.title}</strong>.</p><div className="score"><span>{a?.score??0}</span><small>/ 100</small></div><div className="result-stats"><div><strong>{a?.correct??0}</strong><span>Correct</span></div><div><strong>{quiz.questions.length-(a?.correct??0)}</strong><span>Incorrect</span></div><div><strong>{Math.floor((a?.timeSpent??0)/60)}m {(a?.timeSpent??0)%60}s</strong><span>Time</span></div></div><div className="hero-actions"><button className="primary" onClick={onRetry}>Retake quiz</button><button className="secondary" onClick={onHome}>Back to home</button></div></section>}
+function ManagePage({quizzes,onBack,onOpen,onDelete}){return <section className="page narrow"><button className="back" onClick={onBack}>← Back</button><div className="section-head"><div className="eyebrow">LIBRARY</div><h2>Your quizzes</h2><p>Open a quiz to practice again or remove one you no longer need.</p></div>{quizzes.length===0?<div className="empty">No quizzes yet.</div>:<div className="quiz-list">{quizzes.map(q=><div className="quiz-row" key={q.id}><div><strong>{q.title}</strong><span>{q.questions.length} questions · {q.timeLimit} min · {q.attempts?.length||0} attempts</span></div><div><button className="text-btn" onClick={()=>onOpen(q)}>Open</button><button className="delete" onClick={()=>onDelete(q.id)}>Delete</button></div></div>)}</div>}</section>}
 export default App;
