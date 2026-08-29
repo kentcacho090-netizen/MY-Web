@@ -323,15 +323,15 @@ const QuizTaker = ({ quiz, onComplete, onBack }) => {
   const [timeLeft, setTimeLeft] = useState(quiz.timeLimit * 60);
   const [submitted, setSubmitted] = useState(false);
 
-  useEffect(() => {
-    if (timeLeft <= 0) {
-      handleSubmit();
-      return;
-    }
+     useEffect(() => {
+     if (timeLeft <= 0 && currentQuestion === quiz.questions.length - 1) {
+       onComplete(answers, quiz.timeLimit * 60 - timeLeft);
+       return;
+     }
 
-    const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
+     const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+     return () => clearInterval(timer);
+   }, [timeLeft, currentQuestion, quiz.questions.length, answers, quiz.timeLimit, onComplete]);
 
   const handleSubmit = () => {
     setSubmitted(true);
